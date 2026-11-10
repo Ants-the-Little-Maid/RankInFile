@@ -3,6 +3,7 @@
 ## Notes: Action buttons with a pop-out menu for swapping spell ranks, even in combat.
 ## Author: Ants
 ## Version: @project-version@
+## X-Curse-Project-ID: 1788587
 ## SavedVariables: RankInFileDB
 ## SavedVariablesPerCharacter: RankInFileCharDB
 

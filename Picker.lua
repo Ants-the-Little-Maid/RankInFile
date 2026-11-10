@@ -21,10 +21,7 @@ local entries = {}     -- entry buttons on the page
 local page = 1
 local skillLines = {}  -- tab index -> skill line index
 
-local function RankNumber(sub)
-	if type(sub) ~= "string" then return nil end
-	return tonumber(sub:match("(%d+)"))
-end
+local RankNumber = ns.RankNumber
 
 -------------------------------------------------------------------------------
 -- Data
@@ -101,12 +98,7 @@ local function PickUp(spellID)
 end
 
 local function TakeCursorSpell()
-	local kind, slot, _, spellID = GetCursorInfo()
-	if kind ~= "spell" then return end
-	if not spellID and slot then
-		local info = C_SpellBook.GetSpellBookItemInfo(slot, BANK)
-		spellID = info and info.actionID
-	end
+	local spellID = ns.CursorSpell()
 	if spellID then
 		ClearCursor()
 		PickUp(spellID)
@@ -119,7 +111,7 @@ end
 
 local function Entry_OnClick(self, mouseButton)
 	if not self.fam then return end
-	if GetCursorInfo() then
+	if ns.CursorSpell() then
 		TakeCursorSpell() -- clicking with a spell held works like dropping it
 		return
 	end
@@ -129,6 +121,9 @@ local function Entry_OnClick(self, mouseButton)
 			ns.Print(self.fam.name .. " removed, with its macro.")
 		end
 	else
+		-- Anything else held (say the macro from the last spell picked) is put
+		-- down, so spells can be picked one after another.
+		if GetCursorInfo() and not InCombatLockdown() then ClearCursor() end
 		PickUp(self.fam.topID)
 	end
 end

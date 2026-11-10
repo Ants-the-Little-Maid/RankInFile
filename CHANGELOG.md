@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3 (2026-11-10)
+
+- Removing a button now empties it, so a key still bound to it no longer casts the old spell.
+- `/rf set` and `/rf add` with a spell that has nothing castable in your spellbook (a passive, say) are refused, instead of emptying the button or making an empty one.
+- Ranks sort correctly while some rank names haven't loaded yet, and a rank carried over from Rank Flyout waits for its name instead of falling back to the highest rank.
+- A Shift-drag that is still going when combat starts is ended and saved there. A spell dropped on a button in combat stays on your cursor.
+- The rank menu stays on screen when the list is long.
+- In the spell picker, clicking a spell while still holding the last spell's macro picks up the new one.
+- `/rf scale` and `/rf reset` say what they did.
+- Less repeated work: a burst of spellbook updates rebuilds the buttons once, and hidden floating buttons are no longer redrawn.
+- Coming from 0.4.0: the first character you log in with takes the 0.4.0 buttons for spells it knows, plus any its bar macros or key bindings use. The old account-wide set is then removed from the saved settings. Buttons a character already has are not changed. Other characters that haven't logged in since 0.4.0 start empty.
+
 ## 0.4.2 (2026-11-07)
 
 - Coming from 0.4.0: each character now keeps the 0.4.0 buttons for spells it knows, plus any its bar macros or key bindings use. In 0.4.1 the first character to log in took every button, even one that couldn't cast them. Characters that already logged in with 0.4.1 keep what they have and pick up any missing buttons for their spells.

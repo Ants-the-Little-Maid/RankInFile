@@ -345,6 +345,12 @@ check(b.scale == 1.5, "scale applied")
 local before = #printed
 SlashCmdList.RANKINFILE("add Pyroblast")
 check(printed[#printed]:find("couldn't find"), "unknown spell reported")
+-- a spell with nothing castable in the spellbook leaves the button as it was
+local heldFamily = RankInFileCharDB.buttons[1].family
+SlashCmdList.RANKINFILE("set 1 Frostbolt Passive")
+check(printed[#printed]:find("isn't in your spellbook"), "/rf set reports a spell with no castable rank")
+check(heldFamily ~= nil and RankInFileCharDB.buttons[1].family == heldFamily and #b.ranks > 0,
+	"/rf set with such a spell keeps what the button held")
 SlashCmdList.RANKINFILE("")
 check(#printed > before + 5, "help printed")
 SlashCmdList.RANKINFILE("list")
@@ -427,6 +433,8 @@ SlashCmdList.RANKINFILE("macro 1")
 check(pickedUp == mi, "/rf macro picks up the macro")
 SlashCmdList.RANKINFILE("remove 1")
 check(macros[mi] == nil and macros[7] ~= nil, "remove deletes only this button's macro")
+check(b:GetAttribute("spell") == nil and b:GetAttribute("rf-count") == 0,
+	"a removed button holds no spell (a key still bound to it casts nothing)")
 
 ---------------------------------------------------------------- minimap + spell picker
 local mm = RankInFileMinimapButton
@@ -789,49 +797,29 @@ do
 	}
 	RankInFileDB.movedButtons = { ["Player-E"] = { [3] = 2 } }
 	RankInFileDB.shared040Taken = true -- left behind by 0.4.1
-	local charD, charE = {}, {}
+	local charD, charE = { declined040 = { [9] = true }, looked040 = true }, {} -- notes left by 0.4.2
 
-	-- D logs in before its spellbook has loaded.
+	-- D logs in first, before its spellbook has loaded.
 	local realLines = C_SpellBook.GetNumSpellBookSkillLines
 	C_SpellBook.GetNumSpellBookSkillLines = function() return 0 end
-	LogInAs(charD, "Player-D")
-	local shared = RankInFileDB.shared040
-	check(RankInFileDB.buttons == nil and shared and shared[1].family == "Frostbolt"
-		and RankInFileDB.shared040Taken == nil, "0.4.0's account-wide buttons are kept aside for handing out")
-	check(next(charD.buttons) == nil, "nothing is taken by spell before the spellbook loads")
-	C_SpellBook.GetNumSpellBookSkillLines = realLines
-	events.scripts.OnEvent(events, "SPELLS_CHANGED")
-	check(charD.buttons[1] and charD.buttons[2] and ns.GetButton(1):GetAttribute("spell") == 205,
-		"once it loads, a character takes the 0.4.0 buttons for spells it knows, with their ranks")
-	check(charD.buttons[3] == nil and charD.buttons[4] == nil, "but not buttons for spells it doesn't know")
-	check(charD.buttons[1] ~= shared[1] and charD.buttons[1].point ~= shared[1].point,
-		"it takes copies, so its changes stay its own")
-
-	LogInAs(charE, "Player-E", {
+	LogInAs(charD, "Player-D", {
 		[121] = { name = "Wrath", icon = 134400,
 			body = "#showtooltip Wrath\n/click [btn:2] RankInFileButton3 RightButton; RankInFileButton3" },
 	}, {
-		L = "CLICK RankInFileButton4:LeftButton",
-		M = "CLICK RankFlyoutButton3:LeftButton", -- moved to button 2 under 0.4.0, but loaded late
+		L ="CLICK RankInFileButton4:LeftButton",
 	})
-	check(charE.buttons[1] and charE.buttons[2], "another character also takes the buttons for spells it knows")
-	check(charE.buttons[3] and charE.buttons[4],
+	local shared = RankInFileDB.shared040
+	check(RankInFileDB.buttons == nil and shared and shared[1].family == "Frostbolt"
+		and RankInFileDB.shared040Taken == nil, "0.4.0's account-wide buttons are kept aside for handing out")
+	check(next(charD.buttons) == nil, "nothing is taken before the spellbook loads")
+	check(charD.declined040 == nil and charD.looked040 == nil, "0.4.2's hand-out notes are cleared")
+	C_SpellBook.GetNumSpellBookSkillLines = realLines
+	events.scripts.OnEvent(events, "SPELLS_CHANGED")
+	check(charD.buttons[1] and charD.buttons[2] and ns.GetButton(1):GetAttribute("spell") == 205,
+		"once it loads, the first character takes the 0.4.0 buttons for spells it knows, with their ranks")
+	check(charD.buttons[3] and charD.buttons[4],
 		"and the ones its macros and key bindings click, even for spells it hasn't learned")
-	check(charE.moved and charE.moved[3] == 2 and RankInFileDB.movedButtons == nil,
-		"its 0.4.0 Rank Flyout moves come along")
-	check(bindings["M"] == "CLICK RankInFileButton2:LeftButton", "so a late Rank Flyout key binding still follows them")
-	ns.RemoveButton(4)
-	events.scripts.OnEvent(events, "UPDATE_BINDINGS")
-	check(charE.buttons[4] == nil, "a button it removes isn't taken back")
-
-	-- Every 0.4.0 button is now taken or removed: a catch-up reads the macros
-	-- once (for Rank Flyout ones), not again looking for 0.4.0 buttons.
-	local realInfo, reads = GetMacroInfo, 0
-	GetMacroInfo = function(i) reads = reads + 1; return realInfo(i) end
-	events.scripts.OnEvent(events, "UPDATE_BINDINGS")
-	GetMacroInfo = realInfo
-	local na, nc = GetNumMacros()
-	check(reads == na + nc, "once every 0.4.0 button is settled, it stops looking (" .. reads .. " macro reads)")
+	check(RankInFileDB.shared040 == nil, "the 0.4.0 set is then dropped from the account settings")
 
 	-- A rebuild draws each button once (not again through the attribute change).
 	local realCooldown, calls = C_Spell.GetSpellCooldown, 0
@@ -839,6 +827,29 @@ do
 	events.scripts.OnEvent(events, "SPELLS_CHANGED")
 	C_Spell.GetSpellCooldown = realCooldown
 	check(calls == 2, "a rebuild draws each button with a known spell once (" .. calls .. ")")
+
+	LogInAs(charE, "Player-E", nil, {
+		M = "CLICK RankFlyoutButton3:LeftButton", -- moved to button 2 under 0.4.0, but loaded late
+	})
+	check(next(charE.buttons) == nil, "a later character starts with no 0.4.0 buttons")
+	check(charE.moved and charE.moved[3] == 2 and RankInFileDB.movedButtons == nil,
+		"its 0.4.0 Rank Flyout moves come along")
+	check(bindings["M"] == "CLICK RankInFileButton2:LeftButton", "so a late Rank Flyout key binding still follows them")
+
+	-- A character that already took its buttons under 0.4.2 keeps them as they
+	-- are; only the leftover account copy goes.
+	RankInFileDB.shared040 = { [1] = { family = "Fireball", top = true }, [2] = { family = "Frostbolt", top = true } }
+	local charF = { looked040 = true, moved = { 1, 2 }, buttons = {
+		[1] = { family = "Frostbolt", spellID = 205, top = false },
+		[2] = { family = "Frost Armor", top = true },
+	} }
+	LogInAs(charF, "Player-F")
+	check(charF.buttons[1].family == "Frostbolt" and charF.buttons[1].spellID == 205 and charF.buttons[1].top == false
+		and charF.buttons[2].family == "Frost Armor" and charF.buttons[3] == nil,
+		"a character's own buttons are untouched when the 0.4.0 set is dropped")
+	check(charF.moved and charF.moved[1] == 1 and charF.moved[2] == 2, "its Rank Flyout moves are kept")
+	check(RankInFileDB.shared040 == nil and RankInFileDB.direction ~= nil and RankInFileDB.minimap ~= nil,
+		"only the 0.4.0 set leaves the account settings")
 end
 LogInAs(charA, "Player-A")
 
@@ -850,6 +861,93 @@ do
 	C_Timer.After = realAfter
 	check(#queued == 2, "a burst of macro updates is checked once, and anchored once (" .. #queued .. " timers)")
 	for _, fn in ipairs(queued) do fn() end
+end
+
+-- Ranks whose subtext hasn't loaded: a consistent order, and a rank waited for
+-- from Rank Flyout is kept until the subtext is there.
+do
+	local n0 = #book
+	book[n0 + 1] = { name = "Mixed", actionID = 501, sub = "Rank 2" }
+	book[n0 + 2] = { name = "Mixed", actionID = 502, sub = "" }
+	book[n0 + 3] = { name = "Mixed", actionID = 503, sub = "" }
+	book[n0 + 4] = { name = "Mixed", actionID = 504, sub = "Rank 1" }
+	index()
+	local r = ns.CollectRanks("Mixed")
+	check(#r == 4 and r[1].spellID == 504 and r[2].spellID == 501 and r[3].spellID == 502 and r[4].spellID == 503,
+		"numbered ranks sort first, unnumbered after in spellbook order")
+
+	local free
+	for i = 1, ns.MAX_BUTTONS do if not RankInFileCharDB.buttons[i] then free = i break end end
+	RankInFileCharDB.buttons[free] = { family = "Mixed", top = true, wantSub = "Rank 3" }
+	events.scripts.OnEvent(events, "SPELLS_CHANGED")
+	local cfg = RankInFileCharDB.buttons[free]
+	check(cfg.wantSub == "Rank 3", "a rank from Rank Flyout is still waited for while subtext is missing")
+	book[n0 + 2].sub, book[n0 + 3].sub = "Rank 3", "Rank 4"
+	index()
+	events.scripts.OnEvent(events, "SPELLS_CHANGED")
+	check(cfg.wantSub == nil and cfg.spellID == 502 and cfg.top == false
+		and ns.GetButton(free):GetAttribute("spell") == 502, "the waited-for rank is chosen once its subtext loads")
+
+	-- A burst of spellbook changes rebuilds once.
+	local mb = ns.GetButton(free)
+	local realAfter, queued = C_Timer.After, {}
+	C_Timer.After = function(delay, fn) if delay > 0 then queued[#queued + 1] = fn else fn() end end
+	local realCooldown, calls = C_Spell.GetSpellCooldown, 0
+	C_Spell.GetSpellCooldown = function(id) if id == 502 then calls = calls + 1 end; return realCooldown(id) end
+	for _ = 1, 5 do events.scripts.OnEvent(events, "SPELLS_CHANGED") end
+	check(#queued == 1 and calls == 0, "a burst of spellbook changes queues one rebuild (" .. #queued .. ")")
+	for _, fn in ipairs(queued) do fn() end
+	check(calls == 1, "and that rebuild draws the button once (" .. calls .. ")")
+	C_Timer.After = realAfter
+
+	-- Floating buttons hidden: nothing is redrawn on cooldown events or range ticks.
+	SlashCmdList.RANKINFILE("float off")
+	calls = 0
+	events.scripts.OnEvent(events, "SPELL_UPDATE_COOLDOWN")
+	local realUsable, tints = C_Spell.IsSpellUsable, 0
+	C_Spell.IsSpellUsable = function(...) tints = tints + 1; return realUsable(...) end
+	events.scripts.OnUpdate(events, 1)
+	check(calls == 0 and tints == 0, "hidden floating buttons are not redrawn")
+	SlashCmdList.RANKINFILE("float on")
+	events.scripts.OnUpdate(events, 1)
+	check(tints > 0, "shown floating buttons are tinted again")
+	C_Spell.GetSpellCooldown, C_Spell.IsSpellUsable = realCooldown, realUsable
+
+	-- A Shift-drag is ended as combat starts; a plain drag saves no position.
+	local realShift, stops = IsShiftKeyDown, 0
+	local realStop = mb.StopMovingOrSizing
+	mb.StopMovingOrSizing = function() stops = stops + 1 end
+	cfg.point = nil
+	mb.scripts.OnDragStart(mb)
+	mb.scripts.OnDragStop(mb)
+	ClearCursor()
+	check(stops == 0 and cfg.point == nil, "a plain drag (macro pick-up) doesn't touch the position")
+	IsShiftKeyDown = function() return true end
+	mb.scripts.OnDragStart(mb)
+	IsShiftKeyDown = realShift
+	events.scripts.OnEvent(events, "PLAYER_REGEN_DISABLED")
+	inCombat = true
+	mb.scripts.OnDragStop(mb)
+	check(stops == 1 and cfg.point and cfg.point[3] == 10, "a move is ended and saved as combat starts, once")
+
+	-- A spell dropped on a button in combat stays on the cursor.
+	cursor = 133
+	mb.scripts.OnReceiveDrag(mb)
+	check(cursor == 133 and cfg.family == "Mixed", "a spell dropped in combat stays on the cursor")
+	inCombat = false
+	cursor = nil
+	mb.StopMovingOrSizing = realStop
+
+	-- /rf scale and /rf reset say what they did.
+	SlashCmdList.RANKINFILE("scale 1")
+	check(printed[#printed]:find("scale set to 1"), "/rf scale confirms")
+	SlashCmdList.RANKINFILE("reset")
+	check(printed[#printed]:find("back to the middle"), "/rf reset confirms")
+
+	ns.RemoveButton(free)
+	for i = n0 + 4, n0 + 1, -1 do book[i] = nil end
+	index()
+	events.scripts.OnEvent(events, "SPELLS_CHANGED")
 end
 
 __RESULT =("%d passed, %d failed"):format(passed, failed)

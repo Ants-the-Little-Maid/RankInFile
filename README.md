@@ -28,8 +28,9 @@ scale start fresh, and floating buttons start hidden (`/rf float on` shows them)
 ## Updating from 0.4.0
 
 0.4.0 saved one set of buttons for your whole account. From 0.4.1 each character has its own.
-Each character keeps a copy of the 0.4.0 buttons for spells it knows, plus any its bar macros
-or key bindings use. `/rf remove` clears any a character doesn't need, and they don't come back.
+The first character you log in with takes the 0.4.0 buttons for spells it knows, plus any its
+bar macros or key bindings use, and the old account-wide set is then removed. Characters that
+already have their buttons keep them unchanged. Any other character starts empty.
 
 ## Using it
 
@@ -119,8 +120,8 @@ Adding, removing and moving buttons only work out of combat. Choosing ranks work
 | Check | Result |
 |---|---|
 | Lua 5.1 parse (luaparse 0.3.1), including the three secure snippets | Pass |
-| Smoke test `tests/rankinfile_smoke.lua` (fengari, stubbed API, including secret values and the move from Rank Flyout) | 145 of 145 passed (0.4.2) |
-| In the Forever client | 0.4.2 not yet run in the client |
+| Smoke test `tests/rankinfile_smoke.lua` (fengari, stubbed API, including secret values and the move from Rank Flyout) | 161 of 161 passed (0.4.3) |
+| In the Forever client | 0.4.3 not yet run in the client |
 
 Points to check in the client:
 
@@ -141,8 +142,10 @@ Points to check in the client:
 11. 0.4.0: with the old `RankFlyout` folder removed, logging in moves its bar macros (same
     slots, same rank) and key bindings, and prints what moved. Check a second character too. With it still enabled, a chat
     line asks you to disable it and nothing moves.
-12. 0.4.1/0.4.2: buttons are per character. Coming from 0.4.0, each character keeps the
-    buttons for spells it knows plus the ones its bars use, whichever logs in first. A rank
-    chosen on one character doesn't change another's.
+12. 0.4.1 to 0.4.3: buttons are per character. Coming from 0.4.0, the first character to log
+    in keeps the buttons for spells it knows plus the ones its bars use. A rank chosen on one
+    character doesn't change another's.
 13. 0.4.1: with the same macro on two bar slots, right-clicking each opens the menu beside
     that slot (out of combat), and casting from either slot still works in combat.
+14. 0.4.3: after `/rf remove`, a key that was bound to that button casts nothing. Starting
+    combat during a Shift-drag gives no blocked-action error.

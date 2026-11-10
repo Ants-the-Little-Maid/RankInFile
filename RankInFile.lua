@@ -80,6 +80,7 @@ local function RankNumber(subName)
 	if type(subName) ~= "string" then return nil end
 	return tonumber(subName:match("(%d+)"))
 end
+ns.RankNumber = RankNumber
 
 -- Every learned, non-passive spellbook entry whose name matches, lowest rank first.
 -- Lower ranks are normal spellbook items; Blizzard's spellbook only hides them
@@ -111,7 +112,14 @@ local function CollectRanks(familyName)
 		end
 	end
 	table.sort(ranks, function(a, b)
-		if a.rank and b.rank and a.rank ~= b.rank then return a.rank < b.rank end
+		-- Numbered ranks first, by number; ranks without a number (subtext not
+		-- loaded, or none) after them in spellbook order. Mixing the two rules
+		-- per pair would not be a consistent order for table.sort.
+		if a.rank and b.rank then
+			if a.rank ~= b.rank then return a.rank < b.rank end
+		elseif a.rank or b.rank then
+			return a.rank ~= nil
+		end
 		return a.order < b.order
 	end)
 	return ranks
@@ -440,7 +448,10 @@ local function UpdateMain(btn)
 	end
 end
 
+-- Buttons on screen. With the floating buttons hidden (/rf float off) there is
+-- nothing to draw: the bar slot draws the macro itself.
 local function ForEachShown(func)
+	if db.float == false then return end
 	for _, btn in pairs(buttons) do
 		if btn:IsShown() then func(btn) end
 	end
@@ -506,6 +517,28 @@ local function ShowSpellTooltip(owner, spellID, extraLines)
 	GameTooltip:Show()
 end
 
+-- The spell on the cursor (from the spellbook or an action bar), or nil.
+function ns.CursorSpell()
+	local kind, slot, _, spellID = GetCursorInfo()
+	if kind ~= "spell" then return nil end
+	if not spellID and slot then
+		local info = C_SpellBook.GetSpellBookItemInfo(slot, BANK)
+		spellID = info and info.actionID
+	end
+	return spellID
+end
+
+-- Ends a Shift-drag and saves where the button was left. Also called as combat
+-- starts (PLAYER_REGEN_DISABLED), while the button may still be moved.
+local function StopMoving(b)
+	if not b.moving then return end
+	b.moving = nil
+	b:StopMovingOrSizing()
+	local point, _, relPoint, x, y = b:GetPoint(1)
+	local cfg = charDB.buttons[b.index]
+	if cfg and point then cfg.point = { point, relPoint, x, y } end
+end
+
 local function SaveChoice(btn, spellID)
 	local cfg = charDB.buttons[btn.index]
 	-- While the spellbook doesn't list this spell (say it is still loading)
@@ -569,6 +602,7 @@ local function CreateMainButton(index)
 	-- show/hide it in combat.
 	local flyout = CreateFrame("Frame", "RankInFileMenu" .. index, UIParent, "SecureFrameTemplate")
 	flyout:SetFrameStrata("DIALOG")
+	flyout:SetClampedToScreen(true) -- a long rank list stays on screen
 	flyout:Hide()
 	flyout.bg = flyout:CreateTexture(nil, "BACKGROUND")
 	flyout.bg:SetAllPoints()
@@ -593,6 +627,9 @@ local function CreateMainButton(index)
 	b:HookScript("OnAttributeChanged", function(self, name, value)
 		if name == "spell" and not rebuilding then
 			SaveChoice(self, tonumber(value))
+			-- A rank chosen by hand outranks one still waited for from Rank Flyout.
+			local cfg = charDB.buttons[self.index]
+			if cfg then cfg.wantSub = nil end
 			UpdateMain(self)
 			SyncMacro(self, false)
 		end
@@ -612,7 +649,10 @@ local function CreateMainButton(index)
 	b:SetScript("OnDragStart", function(self)
 		if InCombatLockdown() then return end
 		if IsShiftKeyDown() then
-			if not db.locked then self:StartMoving() end
+			if not db.locked then
+				self.moving = true
+				self:StartMoving()
+			end
 			return
 		end
 		-- Plain drag: pick up this button's macro to drop on an action bar.
@@ -620,23 +660,16 @@ local function CreateMainButton(index)
 		local m = SyncMacro(self, true)
 		if m then PickupMacro(m) end
 	end)
-	b:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		local point, _, relPoint, x, y = self:GetPoint(1)
-		local cfg = charDB.buttons[self.index]
-		if cfg then cfg.point = { point, relPoint, x, y } end
-	end)
+	b:SetScript("OnDragStop", StopMoving)
 	b:SetScript("OnReceiveDrag", function(self)
-		local kind, slot, _, spellID = GetCursorInfo()
-		if kind ~= "spell" then return end
-		if not spellID and slot then
-			local info = C_SpellBook.GetSpellBookItemInfo(slot, BANK)
-			spellID = info and info.actionID
+		local spellID = ns.CursorSpell()
+		if not spellID then return end
+		if InCombatLockdown() then -- keep the spell on the cursor
+			Print("can't change buttons in combat.")
+			return
 		end
-		if spellID then
-			ClearCursor()
-			AssignSpell(self.index, spellID)
-		end
+		ClearCursor()
+		AssignSpell(self.index, spellID)
 	end)
 	b:SetScript("OnEnter", function(self)
 		local _, spellID = CurrentEntry(self)
@@ -737,6 +770,12 @@ local function Rebuild(index)
 		if b then
 			b.flyout:Hide()
 			b:Hide()
+			-- A key still bound to this button must not keep casting its old spell.
+			b.ranks = nil
+			b:SetAttribute("rf-count", 0)
+			rebuilding = true
+			b:SetAttribute("spell", nil)
+			rebuilding = false
 		end
 		return
 	end
@@ -749,10 +788,16 @@ local function Rebuild(index)
 	-- A button moved over from Rank Flyout knows its rank only by subtext
 	-- ("Rank 3"), because the spellbook may not be loaded when it is moved.
 	if cfg.wantSub and count > 0 then
+		local found, unloaded = false, false
 		for k, entry in ipairs(ranks) do
-			if entry.sub == cfg.wantSub then cfg.spellID, cfg.top = entry.spellID, k == count end
+			if entry.sub == cfg.wantSub then
+				cfg.spellID, cfg.top = entry.spellID, k == count
+				found = true
+			end
+			if entry.sub == "" then unloaded = true end
 		end
-		cfg.wantSub = nil
+		-- Keep looking on later rebuilds while some rank's subtext hasn't loaded.
+		if found or not unloaded then cfg.wantSub = nil end
 	end
 
 	-- Pick the rank to hold: saved choice if still known, else the highest.
@@ -833,20 +878,25 @@ AssignSpell = function(index, spellID, quiet)
 		Print("couldn't find that spell.")
 		return false
 	end
+	-- Check before touching the button, so a spell with nothing castable in the
+	-- spellbook (a passive, say) doesn't replace what the button holds.
+	local n = #CollectRanks(name)
+	if n == 0 then
+		Print(name .. " isn't in your spellbook.")
+		return false
+	end
 	local cfg = charDB.buttons[index] or {}
 	charDB.buttons[index] = cfg
 	cfg.family = name
 	cfg.spellID = nil
 	cfg.top = true
+	cfg.wantSub = nil
 	Rebuild(index)
-	local n = #buttons[index].ranks
-	if n == 0 then
-		Print(name .. " isn't in your spellbook.")
-	elseif not quiet then
+	if not quiet then
 		Print(("button %d now holds %s (%s known). Drag it onto an action bar to use it there.")
 			:format(index, name, Plural(n, "rank")))
 	end
-	return n > 0
+	return true
 end
 
 -------------------------------------------------------------------------------
@@ -918,10 +968,6 @@ function ns.RemoveButton(n)
 	if not charDB.buttons[n] then return false end
 	DeleteButtonMacro(n)
 	charDB.buttons[n] = nil
-	if db.shared040 then -- don't take 0.4.0's button n back (AdoptShared040)
-		charDB.declined040 = charDB.declined040 or {}
-		charDB.declined040[n] = true
-	end
 	-- Old Rank Flyout buttons moved here no longer have a home: a late macro or
 	-- key binding for one finds a free button instead of whatever takes n next.
 	for old, index in pairs(charDB.moved or {}) do
@@ -1041,8 +1087,7 @@ local function HandleSlash(msg)
 		end
 	elseif cmd == "float" then
 		if rest == "on" or rest == "off" then
-			db.float = rest == "on"
-			RebuildAll()
+			ns.SetFloat(rest == "on")
 			Print(db.float and "floating buttons shown." or "floating buttons hidden. /rf float on brings them back.")
 		else
 			Print("usage: /rf float on | off")
@@ -1068,8 +1113,7 @@ local function HandleSlash(msg)
 	elseif cmd == "dir" then
 		local dir = rest:upper()
 		if DIRECTIONS[dir] then
-			db.direction = dir
-			RebuildAll()
+			ns.SetDirection(dir)
 			Print("menu opens " .. rest:lower() .. ".")
 		else
 			Print("usage: /rf dir up | down | left | right")
@@ -1079,6 +1123,7 @@ local function HandleSlash(msg)
 		if s and s >= 0.5 and s <= 2 then
 			db.scale = s
 			RebuildAll()
+			Print(("scale set to %s."):format(rest))
 		else
 			Print("usage: /rf scale <0.5 to 2>")
 		end
@@ -1086,6 +1131,7 @@ local function HandleSlash(msg)
 		for _, cfg in pairs(charDB.buttons) do cfg.point = nil end
 		db.float = true
 		RebuildAll()
+		Print("buttons moved back to the middle.")
 	else
 		for _, line in ipairs(HELP) do Print(line) end
 	end
@@ -1216,48 +1262,30 @@ ns.MigrateFromRankFlyout = MigrateFromRankFlyout
 -- Buttons from 0.4.0, which saved one set for the whole account
 -------------------------------------------------------------------------------
 -- From 0.4.1 each character has its own buttons, so one character's spells,
--- ranks and removals no longer reach the others. 0.4.0's shared set is kept in
--- the account settings (db.shared040). Each character takes a copy of:
---   * every button for a spell it knows, once its spellbook has loaded (so a
---     button used only as a floating button isn't lost), and
---   * every button its own bar macros or key bindings click, at any time (so
---     its bars keep working, even before it learns the spell).
--- A button a character removes is not taken again (charDB.declined040).
-
-local function CopyButton(cfg)
-	local copy = {}
-	for k, v in pairs(cfg) do copy[k] = v end
-	if cfg.point then copy.point = { cfg.point[1], cfg.point[2], cfg.point[3], cfg.point[4] } end
-	return copy
-end
+-- ranks and removals no longer reach the others. 0.4.0's shared set waits in
+-- the account settings (db.shared040) for the first character that logs in.
+-- Once its spellbook has loaded, that character takes:
+--   * every button for a spell it knows, and
+--   * every button its own bar macros or key bindings click.
+-- The rest is dropped with db.shared040: other characters start empty and make
+-- their buttons again.
 
 -- Returns true if it took any button.
 local function AdoptShared040()
 	local shared = db.shared040
 	if not shared then return false end
-	local declined = charDB.declined040 or {}
-	local function open(n)
-		return shared[n] ~= nil and not charDB.buttons[n] and not declined[n]
-	end
-	-- Nothing left to look for once every shared button is here or was removed.
-	local any = false
-	for n in pairs(shared) do
-		if open(n) then any = true break end
-	end
-	if not any then return false end
+	-- Wait for the spellbook, so the buttons go to a character that knows them.
+	if C_SpellBook.GetNumSpellBookSkillLines() == 0 then return false end
 
 	local took = false
 	local function take(n)
-		if open(n) then
-			charDB.buttons[n] = CopyButton(shared[n])
+		if shared[n] and not charDB.buttons[n] then
+			charDB.buttons[n] = shared[n]
 			took = true
 		end
 	end
-	if not charDB.looked040 and C_SpellBook.GetNumSpellBookSkillLines() > 0 then
-		charDB.looked040 = true
-		for n, cfg in pairs(shared) do
-			if cfg.family and #CollectRanks(cfg.family) > 0 then take(n) end
-		end
+	for n, cfg in pairs(shared) do
+		if cfg.family and #CollectRanks(cfg.family) > 0 then take(n) end
 	end
 	local tag = BUTTON_PREFIX .. "(%d+) RightButton;"
 	ForEachMacro(function(_, _, _, body)
@@ -1265,9 +1293,10 @@ local function AdoptShared040()
 	end)
 	if GetBindingKey then
 		for n = 1, MAX_BUTTONS do
-			if open(n) and GetBindingKey(ClickAction(BUTTON_PREFIX, n)) then take(n) end
+			if GetBindingKey(ClickAction(BUTTON_PREFIX, n)) then take(n) end
 		end
 	end
+	db.shared040 = nil
 	return took
 end
 
@@ -1298,13 +1327,20 @@ events:RegisterEvent("ADDON_LOADED")
 -- (account and character ones load separately), so each batch gets a look for
 -- buttons to take over. One look per burst: a rebuild edits several macros, and
 -- each edit fires UPDATE_MACROS.
-local loggedIn, catchUpQueued = false, false
-local function QueueCatchUp()
-	if not loggedIn or catchUpQueued then return end
+-- rebuild: rebuild the buttons afterwards even if nothing was taken over. The
+-- spellbook changed; SPELLS_CHANGED also comes in bursts, and one rebuild
+-- (a spellbook, macro and bar scan per button) covers the burst.
+local loggedIn, catchUpQueued, rebuildWanted = false, false, false
+local function QueueCatchUp(rebuild)
+	if not loggedIn then return end -- PLAYER_LOGIN looks and rebuilds itself
+	rebuildWanted = rebuildWanted or rebuild or false
+	if catchUpQueued then return end
 	catchUpQueued = true
 	C_Timer.After(0.1, function()
 		catchUpQueued = false
-		if CatchUp() then
+		local wanted = rebuildWanted
+		rebuildWanted = false
+		if CatchUp() or wanted then
 			RebuildAll() -- each Rebuild also tells the picker and minimap menu
 		end
 	end)
@@ -1336,6 +1372,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		end
 		db.shared040Taken = nil -- 0.4.1 gave every 0.4.0 button to the first character
 		charDB.buttons = charDB.buttons or {}
+		charDB.declined040, charDB.looked040 = nil, nil -- 0.4.2's per-character hand-out notes
 		db.direction = db.direction or "UP"
 		db.scale = db.scale or 1
 		if db.locked == nil then db.locked = false end
@@ -1350,21 +1387,24 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		self:RegisterEvent("SPELLS_CHANGED")
 		self:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
 		self:RegisterEvent("PLAYER_REGEN_ENABLED")
+		self:RegisterEvent("PLAYER_REGEN_DISABLED")
 		self:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 		self:RegisterEvent("UPDATE_BINDINGS")
 		self:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 		self:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
 		self:RegisterEvent("UPDATE_MACROS")
 		self:SetScript("OnUpdate", OnUpdate)
-	elseif event == "PLAYER_LOGIN" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_SKILL_LINE" then
-		if event == "PLAYER_LOGIN" then
-			loggedIn = true
-			CatchUp()
-		else
-			QueueCatchUp() -- the spellbook may have just loaded (AdoptShared040)
-		end
+	elseif event == "PLAYER_LOGIN" then
+		loggedIn = true
+		CatchUp()
 		RebuildAll()
+		ns.Changed()
+	elseif event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_SKILL_LINE" then
+		QueueCatchUp(true) -- the spellbook may also have just loaded (AdoptShared040)
 		ns.Changed() -- the picker refreshes even if the rebuild waits for combat to end
+	elseif event == "PLAYER_REGEN_DISABLED" then
+		-- Protected frames can't be moved or released once combat has begun.
+		for _, b in pairs(buttons) do StopMoving(b) end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if pending.migrate then
 			pending.migrate = nil
