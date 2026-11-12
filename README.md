@@ -98,7 +98,7 @@ Adding, removing and moving buttons only work out of combat. Choosing ranks work
   of combat; in combat the menu opens where it was last placed. It stays beside that slot
   through bar updates while the slot still holds the macro.
 - "Hidden" floating buttons stay shown at alpha 0 with the mouse off, so `/click` and key
-  bindings still reach them.
+  bindings still reach them. Their icon, cooldown and range tint aren't redrawn while hidden.
 - Each button is a `SecureActionButtonTemplate` button with `type = "spell"` and the rank's
   spell ID in `spell`. Blizzard's `SECURE_ACTIONS.spell` casts a numeric value with `CastSpellByID`.
 - Rank choice is changed by secure snippets wrapped onto `OnClick` (`SecureHandlerWrapScript`),
@@ -106,8 +106,9 @@ Adding, removing and moving buttons only work out of combat. Choosing ranks work
 - Ranks come from a scan of the player spellbook: every learned, non-passive entry with the same
   name. Lower ranks are real spellbook items; Blizzard's spellbook only hides them unless the
   `ShowAllSpellRanks` option is on (`C_SpellBook.IsSpellBookItemLowRank`).
-- The spellbook is rescanned on `SPELLS_CHANGED` and `LEARNED_SPELL_IN_SKILL_LINE`. If that
-  happens in combat, the rescan waits until combat ends.
+- The spellbook is rescanned on `SPELLS_CHANGED` and `LEARNED_SPELL_IN_SKILL_LINE`, once per
+  burst of those events. If that happens in combat, the rescan waits until combat ends.
+- Removing a button clears its spell, so a key still bound to it casts nothing.
 - Cooldowns: `isActive` (never secret) decides whether to show one. Plain times go to
   `SetCooldown`, as in 0.2.0. In instances the start and duration times are secret, and
   `SetCooldown` rejects secret values from addon code (it is `AllowedWhenUntainted`), so
@@ -149,3 +150,8 @@ Points to check in the client:
     that slot (out of combat), and casting from either slot still works in combat.
 14. 0.4.3: after `/rf remove`, a key that was bound to that button casts nothing. Starting
     combat during a Shift-drag gives no blocked-action error.
+
+## Development
+
+Bug reports and ideas are welcome on the GitHub issues page. Developer notes, test
+instructions and the release process are in [DEVELOPMENT.md](DEVELOPMENT.md).

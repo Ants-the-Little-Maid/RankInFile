@@ -7,3 +7,5 @@ manual-changelog:
 # Kept in the repository, left out of the download.
 ignore:
   - tests
+  - DEVELOPMENT.md
+  - CLAUDE.md
