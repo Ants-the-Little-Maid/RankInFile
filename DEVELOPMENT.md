@@ -13,8 +13,8 @@ Forever client yet; the README's "Points to check in the client" lists what to l
 | | |
 |---|---|
 | Client | WoW Forever only, interface `16001` |
-| Build checked against | 1.60.1.70790 (installed client) |
-| API reference | Generated API docs from `Gethe/wow-ui-source` at `ca8368f2f2380cbe696854f7f2646387c278a61b` (1.60.1.70532) |
+| Build checked against | 1.60.1.70938 (installed client) |
+| API reference | Generated API docs from `Gethe/wow-ui-source` at `bebcb6bf309cf41b41bd74f8ca651e6a105b2676` (1.60.1.70938) |
 
 Those declarations say what exists and how secret values are treated; they don't prove how
 the client behaves. Before passing an API result to a widget, check the function's `Secret*`
@@ -30,7 +30,7 @@ flags and the widget method's `SecretArguments` (see [Rules](#rules)).
 | `Bindings.xml` | The 12 `CLICK RankInFileButtonN:LeftButton` key bindings |
 | `tests/rankinfile_smoke.lua` | Loads all three Lua files against stub WoW functions and checks behaviour |
 | `.github/workflows/release.yml` | Smoke test on every push and pull request; packaging on `v*` tags |
-| `.pkgmeta` | BigWigs packager settings: leaves `tests`, this file and `CLAUDE.md` out of the zip |
+| `.pkgmeta` | BigWigs packager settings: leaves `tests`, `DEVELOPMENT.md` and `CLAUDE.md` out of the zip |
 
 `ns` is shared between the files. The core exposes what the picker and minimap need
 (`ns.PickUpSpell`, `ns.RemoveButton`, `ns.SetFloat`, `ns.SetDirection`, `ns.SetLocked`,

@@ -121,7 +121,7 @@ Adding, removing and moving buttons only work out of combat. Choosing ranks work
 | Check | Result |
 |---|---|
 | Lua 5.1 parse (luaparse 0.3.1), including the three secure snippets | Pass |
-| Smoke test `tests/rankinfile_smoke.lua` (fengari, stubbed API, including secret values and the move from Rank Flyout) | 161 of 161 passed (0.4.3) |
+| Smoke test `tests/rankinfile_smoke.lua` (Lua 5.1 in GitHub Actions, fengari locally; stubbed API, including secret values and the move from Rank Flyout) | 161 of 161 passed (0.4.3) |
 | In the Forever client | 0.4.3 not yet run in the client |
 
 Points to check in the client:
@@ -153,5 +153,8 @@ Points to check in the client:
 
 ## Development
 
-Bug reports and ideas are welcome on the GitHub issues page. Developer notes, test
-instructions and the release process are in [DEVELOPMENT.md](DEVELOPMENT.md).
+Bug reports and ideas are welcome on the
+[GitHub issues page](https://github.com/Ants-the-Little-Maid/RankInFile/issues). Developer
+notes, test instructions and the release process are in
+[DEVELOPMENT.md](https://github.com/Ants-the-Little-Maid/RankInFile/blob/main/DEVELOPMENT.md)
+in the repository.
